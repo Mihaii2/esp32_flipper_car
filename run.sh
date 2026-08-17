@@ -11,6 +11,9 @@ pkill -9 -f ros2 2>/dev/null
 pkill -9 -f rviz2 2>/dev/null
 pkill -9 -f robot_state_publisher 2>/dev/null
 pkill -9 -f ros_gz_bridge 2>/dev/null
+pkill -9 -f esp32_controller 2>/dev/null
+pkill -9 -f teleop_keyboard 2>/dev/null
+pkill -9 -f trajectory_tracker 2>/dev/null
 
 # 2. Source ROS 2 Jazzy underlay
 echo "==> Sourcing ROS 2 Jazzy..."

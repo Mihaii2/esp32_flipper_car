@@ -24,30 +24,23 @@ def generate_launch_description():
         launch_arguments={'gz_args': '-r empty.sdf'}.items(),
     )
 
-    # 2. Robot State Publisher (Publishes base_link & wheel TF)
+    # 2. Robot State Publisher
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[{
-            'robot_description': robot_desc,
-            'use_sim_time': True
-        }]
+        parameters=[{'robot_description': robot_desc, 'use_sim_time': True}]
     )
 
-    # 3. Spawn Robot in Gazebo
+    # 3. Spawn Robot
     spawn_robot = Node(
         package='ros_gz_sim',
         executable='create',
-        arguments=[
-            '-name', 'flipper_car',
-            '-topic', 'robot_description',
-            '-z', '0.08'
-        ],
+        arguments=['-name', 'flipper_car', '-topic', 'robot_description', '-z', '0.08'],
         output='screen'
     )
 
-    # 4. Parameter Bridge (Clock, cmd_vel, imu, odom, tf, joint_states)
+    # 4. Parameter Bridge
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -63,15 +56,7 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 5. Controller Node
-    esp32_node = Node(
-        package='flipper_car',
-        executable='esp32_controller',
-        output='screen',
-        parameters=[{'use_sim_time': True}]
-    )
-
-    # 6. Trajectory Tracker Node
+    # 5. Trajectory Tracker Node
     trajectory_tracker_node = Node(
         package='flipper_car',
         executable='trajectory_tracker',
@@ -79,7 +64,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}]
     )
 
-    # 7. RViz 2
+    # 6. RViz 2
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -94,7 +79,6 @@ def generate_launch_description():
         robot_state_publisher,
         spawn_robot,
         bridge,
-        esp32_node,
         trajectory_tracker_node,
         rviz_node
     ])
