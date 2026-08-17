@@ -10,6 +10,7 @@ pkill -9 -f gz 2>/dev/null
 pkill -9 -f ros2 2>/dev/null
 pkill -9 -f rviz2 2>/dev/null
 pkill -9 -f robot_state_publisher 2>/dev/null
+pkill -9 -f ros_gz_bridge 2>/dev/null
 
 # 2. Source ROS 2 Jazzy underlay
 echo "==> Sourcing ROS 2 Jazzy..."
@@ -23,17 +24,17 @@ colcon build --symlink-install
 echo "==> Sourcing Workspace Overlay..."
 source install/setup.bash
 
-# 5. Open a new terminal window for Keyboard Teleop (WASD + T)
-echo "==> Launching Teleop Window..."
-gnome-terminal --title="Flipper Car Keyboard Teleop" -- bash -c "
+# 5. Open a new terminal window for Multi-Key Teleop
+echo "==> Launching Multi-Key Teleop Window..."
+gnome-terminal --title="Flipper Car TC1508 Teleop" -- bash -c "
   source /opt/ros/jazzy/setup.bash
   source '$WORKSPACE_DIR/install/setup.bash'
-  echo 'Waiting for simulation to initialize...'
+  echo 'Waiting for simulation & bridge to initialize...'
   sleep 4
   ros2 run flipper_car teleop_keyboard
   exec bash
 "
 
-# 6. Launch Gazebo, Bridges, Controller, and RViz in the current terminal
-echo "==> Starting Simulation & RViz..."
+# 6. Launch Gazebo, Bridges, Controller, Tracker, and RViz
+echo "==> Starting Simulation, Bridge, Controller, Tracker & RViz..."
 ros2 launch flipper_car flipper_car.launch.py

@@ -1,98 +1,116 @@
 #!/usr/bin/env python3
 import sys
-import termios
-import tty
-import select
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool
+from std_msgs.msg import String
+from pynput import keyboard
 
 BANNER = """
----------------------------------------------
-🎮 Flipper Car WASD + T Teleop
----------------------------------------------
+-------------------------------------------------------
+🎮 Flipper Car Multi-Key Teleop (Hold Keys Concurrently)
+-------------------------------------------------------
 Controls:
-   W: Forward
-   A: Rotate Full Left (Spin)
-   D: Rotate Full Right (Spin)
-   Q: Forward-Left
-   E: Forward-Right
-   S / Space: STOP
-   
-   T: Toggle Mechanical Polarity (Servo 0° / 180°)
-   CTRL-C: Quit
----------------------------------------------
+   W          : Drive Forward
+   S          : Drive Reverse
+   A          : Spin Left
+   D          : Spin Right
+   W + A      : Forward-Left Curve
+   W + D      : Forward-Right Curve
+   S + A      : Reverse-Left Curve
+   S + D      : Reverse-Right Curve
+   (No keys)  : Auto Stop / Coast
+   CTRL-C     : Quit
+-------------------------------------------------------
 """
 
-def get_key(settings):
-    tty.setraw(sys.stdin.fileno())
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
-    if rlist:
-        key = sys.stdin.read(1)
-    else:
-        key = ''
-    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-    return key
-
-class KeyboardTeleop(Node):
+class MultiKeyTeleop(Node):
     def __init__(self):
         super().__init__('keyboard_teleop')
         self.cmd_pub = self.create_publisher(String, '/flipper/command', 10)
-        self.polarity_pub = self.create_publisher(Bool, '/flipper/polarity', 10)
         
-        self.polarity_reverse = False  # False = 0 deg, True = 180 deg
-        self.current_cmd = "STOP"
+        # Track currently held keys
+        self.pressed_keys = set()
+        self.last_cmd = "STOP"
         
         print(BANNER)
-        self.publish_status()
+        self.timer = self.create_timer(0.05, self.update_and_publish)
 
-    def publish_status(self):
-        pol_str = "REVERSE (180°)" if self.polarity_reverse else "FORWARD (0°)"
-        sys.stdout.write(f"\rCurrent Command: {self.current_cmd:<12} | Polarity: {pol_str:<15}")
-        sys.stdout.flush()
-
-    def run(self):
-        settings = termios.tcgetattr(sys.stdin)
+    def on_press(self, key):
         try:
-            while rclpy.ok():
-                key = get_key(settings)
-                
-                if key:
-                    key_lower = key.lower()
-                    if key_lower == 'w':
-                        self.current_cmd = "FORWARD"
-                    elif key_lower == 'a':
-                        self.current_cmd = "FULL_LEFT"
-                    elif key_lower == 'd':
-                        self.current_cmd = "FULL_RIGHT"
-                    elif key_lower == 'q':
-                        self.current_cmd = "FWD_LEFT"
-                    elif key_lower == 'e':
-                        self.current_cmd = "FWD_RIGHT"
-                    elif key_lower in ['s', ' ']:
-                        self.current_cmd = "STOP"
-                    elif key_lower == 't':
-                        self.polarity_reverse = not self.polarity_reverse
-                        pol_msg = Bool()
-                        pol_msg.data = self.polarity_reverse
-                        self.polarity_pub.publish(pol_msg)
-                    elif key == '\x03':  # CTRL-C
-                        break
-                    
-                    cmd_msg = String()
-                    cmd_msg.data = self.current_cmd
-                    self.cmd_pub.publish(cmd_msg)
-                    self.publish_status()
-                    
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+            if hasattr(key, 'char') and key.char:
+                self.pressed_keys.add(key.char.lower())
+        except AttributeError:
+            pass
+
+    def on_release(self, key):
+        try:
+            if hasattr(key, 'char') and key.char:
+                self.pressed_keys.discard(key.char.lower())
+        except AttributeError:
+            pass
+
+    def resolve_command(self) -> str:
+        w = 'w' in self.pressed_keys
+        s = 's' in self.pressed_keys
+        a = 'a' in self.pressed_keys
+        d = 'd' in self.pressed_keys
+
+        # Forward combinations
+        if w and not s:
+            if a and not d:
+                return "FWD_LEFT"
+            if d and not a:
+                return "FWD_RIGHT"
+            return "FORWARD"
+
+        # Reverse combinations
+        if s and not w:
+            if a and not d:
+                return "REV_LEFT"
+            if d and not a:
+                return "REV_RIGHT"
+            return "REVERSE"
+
+        # Pure in-place spins (when neither W nor S is pressed)
+        if a and not d:
+            return "SPIN_LEFT"
+        if d and not a:
+            return "SPIN_RIGHT"
+
+        return "STOP"
+
+    def update_and_publish(self):
+        current_cmd = self.resolve_command()
+        
+        # Publish and print status
+        msg = String()
+        msg.data = current_cmd
+        self.cmd_pub.publish(msg)
+
+        if current_cmd != self.last_cmd:
+            sys.stdout.write(f"\rCurrent Command: {current_cmd:<15}")
+            sys.stdout.flush()
+            self.last_cmd = current_cmd
 
 def main(args=None):
     rclpy.init(args=args)
-    teleop = KeyboardTeleop()
-    teleop.run()
-    teleop.destroy_node()
-    rclpy.shutdown()
+    teleop_node = MultiKeyTeleop()
+
+    # Start non-blocking keyboard listener
+    listener = keyboard.Listener(
+        on_press=teleop_node.on_press,
+        on_release=teleop_node.on_release
+    )
+    listener.start()
+
+    try:
+        rclpy.spin(teleop_node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        listener.stop()
+        teleop_node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

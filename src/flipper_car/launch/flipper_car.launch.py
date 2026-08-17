@@ -13,6 +13,9 @@ def generate_launch_description():
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
 
+    rviz_config_path = os.path.join(pkg_flipper_car, 'rviz', 'flipper_car.rviz')
+    rviz_args = ['-d', rviz_config_path] if os.path.exists(rviz_config_path) else []
+
     # 1. Gazebo Sim
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -21,23 +24,18 @@ def generate_launch_description():
         launch_arguments={'gz_args': '-r empty.sdf'}.items(),
     )
 
-    # 2. Robot State Publisher (Publishes 3D transforms for RViz)
+    # 2. Robot State Publisher (Publishes base_link & wheel TF)
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc, 'use_sim_time': False}]
+        parameters=[{
+            'robot_description': robot_desc,
+            'use_sim_time': True
+        }]
     )
 
-    # 3. Joint State Publisher (Provides default joint positions when not moving)
-    joint_state_publisher = Node(
-        package='joint_state_publisher',
-        executable='joint_state_publisher',
-        output='screen',
-        parameters=[{'use_sim_time': False}]
-    )
-
-    # 4. Spawn Robot in Gazebo
+    # 3. Spawn Robot in Gazebo
     spawn_robot = Node(
         package='ros_gz_sim',
         executable='create',
@@ -49,27 +47,36 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 5. Parameter Bridge (cmd_vel, imu, and joint_states for RViz)
+    # 4. Parameter Bridge (Clock, cmd_vel, imu, odom, tf, joint_states)
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
             '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
-            '/world/empty/model/flipper_car/joint_state@sensor_msgs/msg/JointState[gz.msgs.Model'
+            '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
+            '/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model',
         ],
-        remappings=[
-            ('/world/empty/model/flipper_car/joint_state', '/joint_states')
-        ],
+        parameters=[{'use_sim_time': True}],
         output='screen'
     )
 
-    # 6. Controller Node
+    # 5. Controller Node
     esp32_node = Node(
         package='flipper_car',
         executable='esp32_controller',
         output='screen',
-        parameters=[{'use_sim_time': False}]
+        parameters=[{'use_sim_time': True}]
+    )
+
+    # 6. Trajectory Tracker Node
+    trajectory_tracker_node = Node(
+        package='flipper_car',
+        executable='trajectory_tracker',
+        output='screen',
+        parameters=[{'use_sim_time': True}]
     )
 
     # 7. RViz 2
@@ -78,15 +85,16 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d', os.path.join(pkg_flipper_car, 'rviz', 'flipper_car.rviz')] if os.path.exists(os.path.join(pkg_flipper_car, 'rviz', 'flipper_car.rviz')) else []
+        arguments=rviz_args,
+        parameters=[{'use_sim_time': True}]
     )
 
     return LaunchDescription([
         gz_sim,
         robot_state_publisher,
-        joint_state_publisher,
         spawn_robot,
         bridge,
         esp32_node,
+        trajectory_tracker_node,
         rviz_node
     ])

@@ -27,6 +27,7 @@ setup(
         'console_scripts': [
             'esp32_controller = flipper_car.esp32_controller:main',
             'teleop_keyboard = flipper_car.teleop_keyboard:main',
+            'trajectory_tracker = flipper_car.trajectory_tracker:main',
         ],
     },
 )
