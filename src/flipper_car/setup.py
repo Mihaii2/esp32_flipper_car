@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'esp32_controller = flipper_car.esp32_controller:main',
+            'teleop_keyboard = flipper_car.teleop_keyboard:main',
         ],
     },
 )
