@@ -8,6 +8,8 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
     </inertial>
+    
+    <!-- Main Body Box -->
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
@@ -15,6 +17,16 @@
       </geometry>
       <material name="blue_mat"><color rgba="0.1 0.3 0.8 1.0"/></material>
     </visual>
+
+    <!-- FRONT NOSE / HEADLIGHT INDICATOR (Visible top and bottom) -->
+    <visual>
+      <origin xyz="0.075 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.015 0.09 0.032"/>
+      </geometry>
+      <material name="bright_yellow"><color rgba="1.0 0.9 0.0 1.0"/></material>
+    </visual>
+
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
@@ -23,7 +35,7 @@
     </collision>
   </link>
 
-  <!-- 1. Front Left Wheel -->
+  <!-- 1. Front Left Wheel (Front Indicator: Orange Hub) -->
   <link name="front_left_wheel">
     <inertial>
       <mass value="0.05"/>
@@ -33,7 +45,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry><cylinder radius="0.04" length="0.025"/></geometry>
-      <material name="black_mat"><color rgba="0.1 0.1 0.1 1.0"/></material>
+      <material name="orange_mat"><color rgba="1.0 0.4 0.0 1.0"/></material>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
@@ -47,7 +59,7 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <!-- 2. Rear Left Wheel -->
+  <!-- 2. Rear Left Wheel (Black) -->
   <link name="rear_left_wheel">
     <inertial>
       <mass value="0.05"/>
@@ -71,7 +83,7 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <!-- 3. Front Right Wheel -->
+  <!-- 3. Front Right Wheel (Front Indicator: Orange Hub) -->
   <link name="front_right_wheel">
     <inertial>
       <mass value="0.05"/>
@@ -81,7 +93,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry><cylinder radius="0.04" length="0.025"/></geometry>
-      <material name="black_mat"><color rgba="0.1 0.1 0.1 1.0"/></material>
+      <material name="orange_mat"><color rgba="1.0 0.4 0.0 1.0"/></material>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
@@ -95,7 +107,7 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <!-- 4. Rear Right Wheel -->
+  <!-- 4. Rear Right Wheel (Black) -->
   <link name="rear_right_wheel">
     <inertial>
       <mass value="0.05"/>
@@ -118,6 +130,38 @@
     <origin xyz="-0.05 -0.065 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
+
+  <!-- Gazebo Material Colors for Visual Clarity -->
+  <gazebo reference="base_link">
+    <material>
+      <ambient>0.1 0.3 0.8 1.0</ambient>
+      <diffuse>0.1 0.3 0.8 1.0</diffuse>
+    </material>
+  </gazebo>
+  <gazebo reference="front_left_wheel">
+    <material>
+      <ambient>1.0 0.4 0.0 1.0</ambient>
+      <diffuse>1.0 0.4 0.0 1.0</diffuse>
+    </material>
+  </gazebo>
+  <gazebo reference="front_right_wheel">
+    <material>
+      <ambient>1.0 0.4 0.0 1.0</ambient>
+      <diffuse>1.0 0.4 0.0 1.0</diffuse>
+    </material>
+  </gazebo>
+  <gazebo reference="rear_left_wheel">
+    <material>
+      <ambient>0.1 0.1 0.1 1.0</ambient>
+      <diffuse>0.1 0.1 0.1 1.0</diffuse>
+    </material>
+  </gazebo>
+  <gazebo reference="rear_right_wheel">
+    <material>
+      <ambient>0.1 0.1 0.1 1.0</ambient>
+      <diffuse>0.1 0.1 0.1 1.0</diffuse>
+    </material>
+  </gazebo>
 
   <!-- Ground Friction -->
   <gazebo reference="front_left_wheel"><mu1>1.5</mu1><mu2>1.5</mu2></gazebo>
