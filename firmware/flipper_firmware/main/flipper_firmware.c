@@ -38,7 +38,7 @@
 #define PIN_IN4         23   // Motor B Right REV
 #define PIN_TILT        4    // SW-520D Tilt Sensor
 
-// PWM Configuration: 1 kHz for high low-end torque
+// PWM Configuration: 1 kHz for solid low-end torque
 #define PWM_TIMER       LEDC_TIMER_0
 #define PWM_MODE        LEDC_LOW_SPEED_MODE
 #define PWM_DUTY_RES    LEDC_TIMER_8_BIT
@@ -49,12 +49,13 @@
 #define CH_B_FWD        LEDC_CHANNEL_2
 #define CH_B_REV        LEDC_CHANNEL_3
 
-#define WINDOW_SIZE     10 
+// 25 samples * 20ms = 500ms robust debounce filter
+#define WINDOW_SIZE     25 
 
 // Sim velocities
 static const float base_speed = 0.5f;
 static const float spin_omega = 2.5f;
-static const float turn_omega = 1.25f;
+static const float turn_omega = 2.2f;
 
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){ ESP_LOGE(TAG, "Failed status line %d: %d.",__LINE__,(int)temp_rc); }}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){ ESP_LOGW(TAG, "Soft fail line %d: %d.",__LINE__,(int)temp_rc);}}
@@ -63,7 +64,7 @@ static rcl_publisher_t cmd_vel_pub;
 static geometry_msgs__msg__Twist twist_msg;
 
 static char current_command[32] = "STOP";
-static volatile float current_gear_multiplier = 0.50f; // Starts at Gear 1 (50% power)
+static volatile float current_gear_multiplier = 0.55f; // Default Gear 1 (55%)
 static volatile bool is_upside_down = false;
 
 static EventGroupHandle_t wifi_event_group;
@@ -151,16 +152,18 @@ void motor_control_task(void *pvParameters) {
     bool stable_flipped = false;
 
     while (1) {
-        history[head] = (gpio_get_level(PIN_TILT) == 1) ? 1 : 0;
+        // SW-520D reading
+        uint8_t raw = (gpio_get_level(PIN_TILT) == 0) ? 1 : 0;
+        history[head] = raw;
         head = (head + 1) % WINDOW_SIZE;
 
         int votes = 0;
         for (int i = 0; i < WINDOW_SIZE; i++) votes += history[i];
 
-        if (!stable_flipped && votes >= 8) {
+        if (!stable_flipped && votes >= 21) {
             stable_flipped = true;
             ESP_LOGW(TAG, "ORIENTATION -> FLIPPED (UPSIDE DOWN)");
-        } else if (stable_flipped && votes <= 2) {
+        } else if (stable_flipped && votes <= 4) {
             stable_flipped = false;
             ESP_LOGW(TAG, "ORIENTATION -> NORMAL (UPRIGHT)");
         }
@@ -173,23 +176,71 @@ void motor_control_task(void *pvParameters) {
         }
 
         int full_duty = (int)(255 * current_gear_multiplier);
-        int turn_duty = (int)(180 * current_gear_multiplier);
+        int turn_duty = (int)(full_duty * 0.35f);
 
         int target_left = 0;
         int target_right = 0;
 
-        if (strcmp(current_command, "FORWARD") == 0) { target_left = full_duty; target_right = full_duty; }
-        else if (strcmp(current_command, "REVERSE") == 0) { target_left = -full_duty; target_right = -full_duty; }
-        else if (strcmp(current_command, "SPIN_LEFT") == 0) { target_left = -full_duty; target_right = full_duty; }
-        else if (strcmp(current_command, "SPIN_RIGHT") == 0) { target_left = full_duty; target_right = -full_duty; }
-        else if (strcmp(current_command, "FWD_LEFT") == 0) { target_left = turn_duty; target_right = full_duty; }
-        else if (strcmp(current_command, "FWD_RIGHT") == 0) { target_left = full_duty; target_right = turn_duty; }
-        else if (strcmp(current_command, "REV_LEFT") == 0) { target_left = -turn_duty; target_right = -full_duty; }
-        else if (strcmp(current_command, "REV_RIGHT") == 0) { target_left = -full_duty; target_right = -turn_duty; }
-
-        if (is_upside_down) {
-            target_left = -target_left;
-            target_right = -target_right;
+        if (!is_upside_down) {
+            // ==========================================
+            // === NORMAL (UPRIGHT / FLIPPED: NO) ===
+            // ==========================================
+            if (strcmp(current_command, "FORWARD") == 0) { 
+                target_left = full_duty; 
+                target_right = full_duty; 
+            } else if (strcmp(current_command, "REVERSE") == 0) { 
+                target_left = -full_duty; 
+                target_right = -full_duty; 
+            } else if (strcmp(current_command, "SPIN_LEFT") == 0) { 
+                target_left = full_duty; 
+                target_right = -full_duty; 
+            } else if (strcmp(current_command, "SPIN_RIGHT") == 0) { 
+                target_left = -full_duty; 
+                target_right = full_duty; 
+            } else if (strcmp(current_command, "FWD_LEFT") == 0) { 
+                target_left = full_duty; 
+                target_right = turn_duty; 
+            } else if (strcmp(current_command, "FWD_RIGHT") == 0) { 
+                target_left = turn_duty; 
+                target_right = full_duty; 
+            } else if (strcmp(current_command, "REV_LEFT") == 0) { 
+                target_left = -full_duty; 
+                target_right = -turn_duty; 
+            } else if (strcmp(current_command, "REV_RIGHT") == 0) { 
+                target_left = -turn_duty; 
+                target_right = -full_duty; 
+            }
+        } else {
+            // ==========================================
+            // === FLIPPED (UPSIDE DOWN / FLIPPED: YES) ===
+            // ==========================================
+            if (strcmp(current_command, "FORWARD") == 0) { 
+                target_left = -full_duty; 
+                target_right = -full_duty; 
+            } else if (strcmp(current_command, "REVERSE") == 0) { 
+                target_left = full_duty; 
+                target_right = full_duty; 
+            } else if (strcmp(current_command, "SPIN_LEFT") == 0) { 
+                target_left = full_duty; 
+                target_right = -full_duty; 
+            } else if (strcmp(current_command, "SPIN_RIGHT") == 0) { 
+                target_left = -full_duty; 
+                target_right = full_duty; 
+            } else if (strcmp(current_command, "FWD_LEFT") == 0) { 
+                // Left curve forward: Left motor full forward (-full), Right motor throttled (-turn)
+                target_left = -turn_duty; 
+                target_right = -full_duty; 
+            } else if (strcmp(current_command, "FWD_RIGHT") == 0) { 
+                // Right curve forward: Left motor full forward (-full), Right motor throttled (-turn)
+                target_left = -full_duty; 
+                target_right = -turn_duty; 
+            } else if (strcmp(current_command, "REV_LEFT") == 0) { 
+                target_left = turn_duty; 
+                target_right = full_duty; 
+            } else if (strcmp(current_command, "REV_RIGHT") == 0) { 
+                target_left = full_duty; 
+                target_right = turn_duty; 
+            }
         }
 
         set_motor_speeds(target_left, target_right);
@@ -243,11 +294,10 @@ void cmd_callback(const void * msgin) {
     const std_msgs__msg__String * msg = (const std_msgs__msg__String *)msgin;
     if (msg != NULL && msg->data.data != NULL) {
         const char *cmd = msg->data.data;
-        // Remapped to overcome static friction
-        if (strcmp(cmd, "GEAR_1") == 0) current_gear_multiplier = 0.50f;      // 50%
-        else if (strcmp(cmd, "GEAR_2") == 0) current_gear_multiplier = 0.68f; // 68%
-        else if (strcmp(cmd, "GEAR_3") == 0) current_gear_multiplier = 0.84f; // 84%
-        else if (strcmp(cmd, "GEAR_4") == 0) current_gear_multiplier = 1.00f; // 100%
+        // 3-Gear Setup
+        if (strcmp(cmd, "GEAR_1") == 0) current_gear_multiplier = 0.55f;      // 55% Low / Precision
+        else if (strcmp(cmd, "GEAR_2") == 0) current_gear_multiplier = 0.75f; // 75% Mid / Cruise
+        else if (strcmp(cmd, "GEAR_3") == 0) current_gear_multiplier = 1.00f; // 100% High / Turbo
         else {
             strncpy(current_command, cmd, sizeof(current_command) - 1);
             current_command[sizeof(current_command) - 1] = '\0';
@@ -268,16 +318,16 @@ void sim_timer_callback(rcl_timer_t * timer, int64_t last_call_time) {
         else if (strcmp(current_command, "SPIN_LEFT") == 0) twist_msg.angular.z = (spin_omega * scale) * flip;
         else if (strcmp(current_command, "SPIN_RIGHT") == 0) twist_msg.angular.z = -(spin_omega * scale) * flip;
         else if (strcmp(current_command, "FWD_LEFT") == 0) {
-            twist_msg.linear.x = (base_speed * 0.75f * scale) * flip;
+            twist_msg.linear.x = (base_speed * 0.65f * scale) * flip;
             twist_msg.angular.z = (turn_omega * scale) * flip;
         } else if (strcmp(current_command, "FWD_RIGHT") == 0) {
-            twist_msg.linear.x = (base_speed * 0.75f * scale) * flip;
+            twist_msg.linear.x = (base_speed * 0.65f * scale) * flip;
             twist_msg.angular.z = -(turn_omega * scale) * flip;
         } else if (strcmp(current_command, "REV_LEFT") == 0) {
-            twist_msg.linear.x = -(base_speed * 0.75f * scale) * flip;
+            twist_msg.linear.x = -(base_speed * 0.65f * scale) * flip;
             twist_msg.angular.z = -(turn_omega * scale) * flip;
         } else if (strcmp(current_command, "REV_RIGHT") == 0) {
-            twist_msg.linear.x = -(base_speed * 0.75f * scale) * flip;
+            twist_msg.linear.x = -(base_speed * 0.65f * scale) * flip;
             twist_msg.angular.z = (turn_omega * scale) * flip;
         }
 

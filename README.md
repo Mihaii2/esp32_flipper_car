@@ -1,11 +1,11 @@
 # Flipper Car ROS 2 Workspace
 
 A dual-mode, auto-inverting RC flipper car controlled via ESP32, TC1508 dual H-bridge motor driver, and ROS 2 Jazzy.
+<img src="video/flipper_demo.gif" width="25%" alt="Flipper Car Live Demo" />
 
-> **🛠 Engineering Revision Note (v1.0 $\rightarrow$ v2.0):**  
-> * **v1.0 (Initial Prototype):** Originally designed around discrete low-side N-channel MOSFETs with an experimental SG90 servo-driven mechanical polarity inverter for fun and educational prototyping across the ROS 2 toolchain.  
+> **🛠 Engineering Revision Note (v1.0 → v2.0):**  
+> * **v1.0 (Initial Prototype):** Originally designed around discrete low-side N-channel MOSFETs with an experimental SG90 servo-driven mechanical polarity inverter for educational prototyping across the ROS 2 toolchain.  
 > * **v2.0 (Current Build):** Upgraded to a dedicated **TC1508 dual H-bridge driver**. The original discrete MOSFETs on hand were standard **`IRFZ44N`** (requiring $V_{GS} \ge 10\text{V}$ for full saturation) rather than logic-level `IRLZ44N` parts. Driving them directly at $3.3\text{V}$ from the ESP32 caused excessive voltage drop and thermal dissipation. Migrating to the TC1508 integrated H-bridge eliminated gate-drive saturation issues, internal flyback diode requirements, and mechanical contact wear while unlocking true zero-radius counter-rotational tank spinning.
-
 
 ---
 
@@ -40,7 +40,6 @@ A dual-mode, auto-inverting RC flipper car controlled via ESP32, TC1508 dual H-b
 | **Flyback Diodes** | 1N4007 | 2 | **Deprecated:** Integrated directly into the TC1508 H-bridge silicon. |
 | **Gate Resistors** | 10 kΩ (1/4W) | 2 | **Deprecated:** Unnecessary with driver-level logic inputs. |
 
-
 ---
 
 ## 🛠 Features
@@ -48,7 +47,7 @@ A dual-mode, auto-inverting RC flipper car controlled via ESP32, TC1508 dual H-b
 - **Counter-Rotating Zero-Radius Spins:** Independent forward/reverse driving per track for instant in-place rotation.
 - **Auto-Flip Inversion:** SW-520D tilt sensor automatically remaps steering and drive polarities in silicon when the chassis is inverted.
 - **Micro-ROS & Native FreeRTOS Integration:** Native ESP-IDF C firmware running micro-ROS (XRCE-DDS) directly over UDP/Wi-Fi to ROS 2 Jazzy.
-- **Verified Hardware-in-the-Loop (HIL):** ESP32 silicon executing all kinematic translations, quaternion roll inversion math, and closed-loop `/cmd_vel` generation controlling Gazebo/RViz in real time.
+- **Verified Hardware-in-the-Loop (HIL):** ESP32 silicon executing all kinematic translations, roll inversion math, and closed-loop `/cmd_vel` generation controlling Gazebo/RViz in real time.
 
 ---
 
@@ -72,8 +71,8 @@ graph TD
         end
 
         subgraph Core1["Core 1: Deterministic Real-Time Control"]
-            Tilt["SW-520D GPIO Interrupt<br/>(Zero-Latency State Machine)"]
-            PWM["TC1508 Dual-Motor PWM<br/>(LEDC / MCPWM Drivers)"]
+            Tilt["SW-520D Filter & Inversion<br/>(500ms Hysteresis Debounce)"]
+            PWM["TC1508 Dual-Motor PWM<br/>(1 kHz LEDC Driver)"]
         end
         
         uROS <-->|Thread-Safe State| Core1
@@ -84,27 +83,28 @@ graph TD
 
 ## 🕹️ Teleoperation & Controls
 
-| Key | Action | Physical Actuation State (Left / Right Channels) |
+| Key Binding | Action | Actuation Behavior / Setpoint |
 |---|---|---|
-| `W` | Drive Forward | Left: `+PWM`, Right: `+PWM` |
-| `S` | Drive Reverse | Left: `-PWM`, Right: `-PWM` |
-| `A` | Zero-Radius Spin Left | Left: `-PWM`, Right: `+PWM` |
-| `D` | Zero-Radius Spin Right | Left: `+PWM`, Right: `-PWM` |
-| `Q` | Forward-Left Arc | Left: `+50% PWM`, Right: `+100% PWM` |
-| `E` | Forward-Right Arc | Left: `+100% PWM`, Right: `+50% PWM` |
-| `Space` | Active Brake / Stop | Left: `0 PWM`, Right: `0 PWM` |
+| `W` / `S` | Drive Forward / Reverse | Both tracks drive symmetrically at active gear speed |
+| `A` / `D` | Zero-Radius Tank Spin | Left & right tracks counter-rotate symmetrically |
+| `W + A` / `W + D` | Sharp Forward Curves | Outer track at full gear speed; inner track at 35% power |
+| `S + A` / `S + D` | Sharp Reverse Curves | Outer track at -100% gear speed; inner track at -35% power |
+| *(Release All)* | Auto Coast / Stop | Motors silenced (`0% PWM`) |
+| `1` | Gear 1 (Precision / Crawl) | Scaled to **55% PWM** (Deadband compensation) |
+| `2` | Gear 2 (Cruise / Street) | Scaled to **75% PWM** |
+| `3` | Gear 3 (Turbo / Full) | Scaled to **100% PWM** |
 
 ---
 
 ## ⚡ Hardware Pinout (ESP32)
 
-| Component | ESP32 Pin | Function |
-|---|---|---|
-| **TC1508 `INA` (`IN1`)** | `IO33` | Left Motor Forward (PWM) |
-| **TC1508 `INB` (`IN2`)** | `IO25` | Left Motor Reverse (PWM) |
-| **TC1508 `INC` (`IN3`)** | `IO18` | Right Motor Forward (PWM) |
-| **TC1508 `IND` (`IN4`)** | `IO19` | Right Motor Reverse (PWM) |
-| **SW-520D Tilt Sensor** | `IO22` | Roll Inversion State (`INPUT_PULLUP`) |
+| Component Pin | ESP32 GPIO | Peripheral / Channel | Function / Configuration |
+|---|---|---|---|
+| **TC1508 `INA` (`IN1`)** | `GPIO 19` | `LEDC_CHANNEL_0` | Motor A Left Inverted Forward |
+| **TC1508 `INB` (`IN2`)** | `GPIO 18` | `LEDC_CHANNEL_1` | Motor A Left Inverted Reverse |
+| **TC1508 `INC` (`IN3`)** | `GPIO 22` | `LEDC_CHANNEL_2` | Motor B Right Forward |
+| **TC1508 `IND` (`IN4`)** | `GPIO 23` | `LEDC_CHANNEL_3` | Motor B Right Reverse |
+| **SW-520D Tilt Sensor** | `GPIO 4` | GPIO Input | Inversion Detection (`INPUT_PULLUP`) |
 
 
 
@@ -115,8 +115,8 @@ graph TD
 ### Prerequisites
 - Ubuntu 22.04 / 24.04
 - ROS 2 (Jazzy / Humble)
-- `colcon` build tools
-- Micro-ROS Agent (`ros-$ROS_DISTRO-micro-ros-agent`)
+- ESP-IDF v5.2+
+- Docker (for micro-ROS agent)
 
 ### Build & Run
 ```bash
@@ -142,6 +142,9 @@ cd ~/ROS_projects/flipper_car_ws/firmware/flipper_firmware
 idf.py build flash monitor
 
 docker run -it --rm --net=host microros/micro-ros-agent:jazzy udp4 --port 8888
+
+d ~/ROS_projects/flipper_car_ws
+./run.sh
 ```
 
 ## 🔌 Hardware Architecture & Circuit Schematic

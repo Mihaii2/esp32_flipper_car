@@ -15,17 +15,17 @@ Controls:
    S          : Drive Reverse
    A          : Spin Left
    D          : Spin Right
-   W + A      : Forward-Left Curve
-   W + D      : Forward-Right Curve
-   S + A      : Reverse-Left Curve
-   S + D      : Reverse-Right Curve
+   W + A      : Sharp Forward-Left Curve
+   W + D      : Sharp Forward-Right Curve
+   S + A      : Sharp Reverse-Left Curve
+   S + D      : Sharp Reverse-Right Curve
    (No keys)  : Auto Stop / Coast
 
-Gears:
-   1          : 25% Power (Slow/Precision)
-   2          : 50% Power
-   3          : 75% Power
-   4          : 100% Power (Ludicrous)
+Gears & Boost:
+   1          : 55% PWM (Precision / Low)
+   2          : 75% PWM (Cruise / Mid)
+   3          : 100% PWM (Turbo / High)
+   SHIFT (Hold): ⚡ Instant NOS / Turbo Boost (100%)
 
    CTRL-C     : Quit
 -------------------------------------------------------
@@ -40,49 +40,76 @@ class MultiKeyTeleop(Node):
         self.pressed_keys = set()
         self.last_cmd = "STOP"
         
-        self.gear_multiplier = 0.25
-        self.current_gear_label = "1 (25%)"
-        self.last_sent_gear = "GEAR_1"
+        # Selected base gear
+        self.base_gear_multiplier = 0.55
+        self.base_gear_cmd = "GEAR_1"
+        self.base_gear_label = "1 (55%)"
+        
+        # Shift Boost State
+        self.is_boosted = False
+        self.last_sent_gear_cmd = "GEAR_1"
         
         self.base_speed = 0.6
         self.spin_omega = 2.5
-        self.turn_omega = 1.2
+        self.turn_omega = 2.2
         
         print(BANNER)
         self.timer = self.create_timer(0.05, self.update_and_publish)
 
     def on_press(self, key):
+        # Handle Shift (Boost) Press
+        if key in [keyboard.Key.shift, keyboard.Key.shift_r]:
+            if not self.is_boosted:
+                self.is_boosted = True
+                self.send_gear_update("GEAR_3")
+                sys.stdout.write(f"\r>>> ⚡ BOOST ENGAGED (100%) | Motion: {self.last_cmd:<12}\n")
+                sys.stdout.flush()
+            return
+
         try:
             if hasattr(key, 'char') and key.char:
                 ch = key.char.lower()
-                if ch in ['1', '2', '3', '4']:
+                if ch in ['1', '2', '3']:
                     gear_map = {
-                        '1': (0.25, 'GEAR_1', '1 (25%)'),
-                        '2': (0.50, 'GEAR_2', '2 (50%)'),
-                        '3': (0.75, 'GEAR_3', '3 (75%)'),
-                        '4': (1.00, 'GEAR_4', '4 (100%)')
+                        '1': (0.55, 'GEAR_1', '1 (55%)'),
+                        '2': (0.75, 'GEAR_2', '2 (75%)'),
+                        '3': (1.00, 'GEAR_3', '3 (100%)')
                     }
-                    self.gear_multiplier, self.last_sent_gear, self.current_gear_label = gear_map[ch]
+                    self.base_gear_multiplier, self.base_gear_cmd, self.base_gear_label = gear_map[ch]
                     
-                    # Send gear update to ESP32 immediately
-                    msg = String()
-                    msg.data = self.last_sent_gear
-                    self.cmd_pub.publish(msg)
-                    
-                    sys.stdout.write(f"\r>>> GEAR SWITCHED: {self.current_gear_label:<10} | Motion: {self.last_cmd:<12}\n")
-                    sys.stdout.flush()
+                    # If not currently holding shift, apply the gear immediately
+                    if not self.is_boosted:
+                        self.send_gear_update(self.base_gear_cmd)
+                        sys.stdout.write(f"\r>>> GEAR SWITCHED: {self.base_gear_label:<10} | Motion: {self.last_cmd:<12}\n")
+                        sys.stdout.flush()
                 else:
                     self.pressed_keys.add(ch)
         except AttributeError:
             pass
 
     def on_release(self, key):
+        # Handle Shift (Boost) Release
+        if key in [keyboard.Key.shift, keyboard.Key.shift_r]:
+            if self.is_boosted:
+                self.is_boosted = False
+                self.send_gear_update(self.base_gear_cmd)
+                sys.stdout.write(f"\r>>> BOOST RELEASED -> {self.base_gear_label:<10} | Motion: {self.last_cmd:<12}\n")
+                sys.stdout.flush()
+            return
+
         try:
             if hasattr(key, 'char') and key.char:
                 ch = key.char.lower()
                 self.pressed_keys.discard(ch)
         except AttributeError:
             pass
+
+    def send_gear_update(self, gear_cmd: str):
+        if gear_cmd != self.last_sent_gear_cmd:
+            msg = String()
+            msg.data = gear_cmd
+            self.cmd_pub.publish(msg)
+            self.last_sent_gear_cmd = gear_cmd
 
     def resolve_command(self) -> str:
         w = 'w' in self.pressed_keys
@@ -108,40 +135,42 @@ class MultiKeyTeleop(Node):
     def update_and_publish(self):
         current_cmd = self.resolve_command()
         
-        # 1. Send hardware command to ESP32
+        # 1. Send hardware motion string to ESP32
         cmd_msg = String()
         cmd_msg.data = current_cmd
         self.cmd_pub.publish(cmd_msg)
 
-        # 2. Compute and publish scaled Twist directly to Gazebo
-        twist = Twist()
-        scale = self.gear_multiplier
+        # 2. Determine effective scale (1.0 if boosted, else base gear)
+        effective_scale = 1.00 if self.is_boosted else self.base_gear_multiplier
+        active_label = "⚡ BOOST (100%)" if self.is_boosted else self.base_gear_label
 
+        # 3. Publish scaled Twist message directly to Gazebo
+        twist = Twist()
         if current_cmd == "FORWARD":
-            twist.linear.x = self.base_speed * scale
+            twist.linear.x = self.base_speed * effective_scale
         elif current_cmd == "REVERSE":
-            twist.linear.x = -self.base_speed * scale
+            twist.linear.x = -self.base_speed * effective_scale
         elif current_cmd == "SPIN_LEFT":
-            twist.angular.z = self.spin_omega * scale
+            twist.angular.z = self.spin_omega * effective_scale
         elif current_cmd == "SPIN_RIGHT":
-            twist.angular.z = -self.spin_omega * scale
+            twist.angular.z = -self.spin_omega * effective_scale
         elif current_cmd == "FWD_LEFT":
-            twist.linear.x = (self.base_speed * 0.75) * scale
-            twist.angular.z = self.turn_omega * scale
+            twist.linear.x = (self.base_speed * 0.65) * effective_scale
+            twist.angular.z = self.turn_omega * effective_scale
         elif current_cmd == "FWD_RIGHT":
-            twist.linear.x = (self.base_speed * 0.75) * scale
-            twist.angular.z = -self.turn_omega * scale
+            twist.linear.x = (self.base_speed * 0.65) * effective_scale
+            twist.angular.z = -self.turn_omega * effective_scale
         elif current_cmd == "REV_LEFT":
-            twist.linear.x = -(self.base_speed * 0.75) * scale
-            twist.angular.z = -self.turn_omega * scale
+            twist.linear.x = -(self.base_speed * 0.65) * effective_scale
+            twist.angular.z = -self.turn_omega * effective_scale
         elif current_cmd == "REV_RIGHT":
-            twist.linear.x = -(self.base_speed * 0.75) * scale
-            twist.angular.z = self.turn_omega * scale
+            twist.linear.x = -(self.base_speed * 0.65) * effective_scale
+            twist.angular.z = self.turn_omega * effective_scale
 
         self.cmd_vel_pub.publish(twist)
 
         if current_cmd != self.last_cmd:
-            sys.stdout.write(f"\rCurrent Command: {current_cmd:<12} | Active Gear: {self.current_gear_label:<10}")
+            sys.stdout.write(f"\rCurrent Command: {current_cmd:<12} | Gear: {active_label:<14}")
             sys.stdout.flush()
             self.last_cmd = current_cmd
 
@@ -160,7 +189,6 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        # Halt both hardware and simulation on exit
         stop_cmd = String()
         stop_cmd.data = 'STOP'
         teleop_node.cmd_pub.publish(stop_cmd)
