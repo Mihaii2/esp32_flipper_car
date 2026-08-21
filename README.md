@@ -1,7 +1,23 @@
 # Flipper Car ROS 2 Workspace
 
 A dual-mode, auto-inverting RC flipper car controlled via ESP32, TC1508 dual H-bridge motor driver, and ROS 2 Jazzy.
-<img src="video/flipper_demo.gif" width="25%" alt="Flipper Car Live Demo" />
+
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="33%">
+        <img src="video/flipper_demo.gif" width="75%" alt="Live Demo" />
+      </td>
+      <td align="center" width="33%">
+        <img src="photos/pic1.jpg" width="80%" alt="Chassis Top" />
+      </td>
+      <td align="center" width="33%">
+        <img src="photos/pic2.jpg" width="80%" alt="Chassis Detail" />
+      </td>
+    </tr>
+  </table>
+</div>
 
 > **🛠 Engineering Revision Note (v1.0 → v2.0):**  
 > * **v1.0 (Initial Prototype):** Originally designed around discrete low-side N-channel MOSFETs with an experimental SG90 servo-driven mechanical polarity inverter for educational prototyping across the ROS 2 toolchain.  
@@ -51,6 +67,16 @@ A dual-mode, auto-inverting RC flipper car controlled via ESP32, TC1508 dual H-b
 
 ---
 
+
+## 🔌 Hardware Architecture & Circuit Schematic
+
+![Circuit Schematic](hardware/schematic_v2.png)
+
+> **📌 Schematic Notes:**
+> * **Driver Integration:** The TC1508 features integrated internal flyback clamping diodes, eliminating the need for external discrete `1N4007` diodes.
+> * **Power Decoupling:** A $470\,\mu\text{F}$ capacitor is tied directly across the battery $+7.4\text{V}$ and $\text{GND}$ rails close to the TC1508 to prevent inductive brownouts on the ESP32.
+> * **ESP32 Board-Level Abstraction:** An **ESP32 DevKitC V4** development board is used for the physical build. Onboard power regulation (5V to 3.3V LDO), EN/Boot pull-ups/capacitors, and the USB-UART interface are integrated on the board and omitted from the component-level schematic for clarity.
+
 ## 🏗️ Architecture & Dual-Core Execution Model
 
 ```mermaid
@@ -93,6 +119,8 @@ graph TD
 | `1` | Gear 1 (Precision / Crawl) | Scaled to **55% PWM** (Deadband compensation) |
 | `2` | Gear 2 (Cruise / Street) | Scaled to **75% PWM** |
 | `3` | Gear 3 (Turbo / Full) | Scaled to **100% PWM** |
+| `Shift` | Turbo Boost | Overrides current gear to **100% PWM** while held |
+
 
 ---
 
@@ -146,12 +174,3 @@ docker run -it --rm --net=host microros/micro-ros-agent:jazzy udp4 --port 8888
 d ~/ROS_projects/flipper_car_ws
 ./run.sh
 ```
-
-## 🔌 Hardware Architecture & Circuit Schematic
-
-![Circuit Schematic](hardware/schematic_v2.png)
-
-> **📌 Schematic Notes:**
-> * **Driver Integration:** The TC1508 features integrated internal flyback clamping diodes, eliminating the need for external discrete `1N4007` diodes.
-> * **Power Decoupling:** A $470\,\mu\text{F}$ capacitor is tied directly across the battery $+7.4\text{V}$ and $\text{GND}$ rails close to the TC1508 to prevent inductive brownouts on the ESP32.
-> * **ESP32 Board-Level Abstraction:** An **ESP32 DevKitC V4** development board is used for the physical build. Onboard power regulation (5V to 3.3V LDO), EN/Boot pull-ups/capacitors, and the USB-UART interface are integrated on the board and omitted from the component-level schematic for clarity.
